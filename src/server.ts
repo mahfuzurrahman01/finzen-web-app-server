@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS Configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: process.env.FRONTEND_URL || 'https://finzen-web-app.vercel.app/',
   credentials: true,
   optionsSuccessStatus: 200,
 };
