@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/database';
@@ -31,7 +31,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'ZenFinance API is running' });
 });
 
@@ -44,7 +44,7 @@ app.use('/api/allocations', allocationRoutes);
 app.use('/api/borrowings', borrowingRoutes);
 
 // Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     success: false,
@@ -54,7 +54,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     message: 'Route not found',
