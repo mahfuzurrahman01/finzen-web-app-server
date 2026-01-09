@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JWTPayload } from '../config/jwt';
+import User from '../models/User';
 
 // Extend Express Request to include user
 declare global {
@@ -30,6 +31,26 @@ export const authenticate = async (
 
     try {
       const decoded = verifyToken(token);
+      
+      // Check if user still exists
+      const user = await User.findById(decoded.userId);
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          message: 'User no longer exists.',
+        });
+        return;
+      }
+
+      // Check if password was changed after token was issued
+      if (decoded.iat && user.changedPasswordAfter(decoded.iat)) {
+        res.status(401).json({
+          success: false,
+          message: 'Password was recently changed. Please login again.',
+        });
+        return;
+      }
+
       req.user = decoded;
       next();
     } catch (error) {

@@ -46,6 +46,9 @@ The server will run on `http://localhost:5001`
 ### Authentication
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login user
+- `POST /api/auth/forgot-password` - Request password reset (sends reset token)
+- `POST /api/auth/reset-password` - Reset password with token
+- `POST /api/auth/change-password` - Change password (authenticated users)
 
 ### Accounts
 - `GET /api/accounts` - Get all accounts
@@ -85,6 +88,47 @@ All endpoints (except `/api/auth/*`) require JWT token in the Authorization head
 ```
 Authorization: Bearer <token>
 ```
+
+### Password Security Features
+
+The backend implements several security best practices for password management:
+
+1. **Password Hashing**: All passwords are hashed using bcrypt.js with salt rounds
+2. **Password Reset Tokens**: Cryptographically secure reset tokens (32 bytes, SHA-256 hashed)
+3. **Token Expiration**: Reset tokens expire after 1 hour
+4. **Password Change Tracking**: Tracks when passwords are changed (`passwordChangedAt`)
+5. **Token Invalidation**: JWT tokens are automatically invalidated if password is changed after token issuance
+6. **Email Privacy**: Forgot password endpoint doesn't reveal if email exists (security best practice)
+
+### Password Endpoints Details
+
+#### Forgot Password (`POST /api/auth/forgot-password`)
+- **Access**: Public
+- **Body**: `{ email: string }`
+- **Response**: Always returns success (for security - doesn't reveal if email exists)
+- **Development Mode**: Returns reset token in response (for testing)
+- **Production**: Should send reset token via email (requires email service integration)
+
+#### Reset Password (`POST /api/auth/reset-password`)
+- **Access**: Public
+- **Body**: `{ token: string, password: string, confirmPassword: string }`
+- **Response**: Returns new JWT token and user data
+- **Validations**: 
+  - Token must be valid and not expired
+  - Password must be at least 6 characters
+  - Password confirmation must match
+
+#### Change Password (`POST /api/auth/change-password`)
+- **Access**: Private (requires authentication)
+- **Body**: `{ currentPassword: string, newPassword: string, confirmPassword: string }`
+- **Response**: Returns new JWT token and user data
+- **Validations**:
+  - Current password must be correct
+  - New password must be different from current
+  - Password must be at least 6 characters
+  - Password confirmation must match
+
+**Note**: After password change, all old JWT tokens are automatically invalidated and user must use the new token returned in the response.
 
 ## Production Deployment
 
