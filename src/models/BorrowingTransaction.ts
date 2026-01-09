@@ -4,7 +4,7 @@ export interface IBorrowingTransaction extends Document {
   borrowingId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   amount: number;
-  accountId: mongoose.Types.ObjectId; // Account used for payment/return
+  accountId?: mongoose.Types.ObjectId | null; // Account used for payment/return (null for cash payments)
   date: Date;
   note?: string;
   type: 'payment' | 'return'; // 'payment' = paying back borrowed, 'return' = receiving back lent
@@ -34,7 +34,8 @@ const BorrowingTransactionSchema = new Schema<IBorrowingTransaction>(
     accountId: {
       type: Schema.Types.ObjectId,
       ref: 'Account',
-      required: [true, 'Account is required'],
+      required: false, // Optional for cash payments
+      default: null,
     },
     date: {
       type: Date,

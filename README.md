@@ -32,6 +32,11 @@ MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/finzen-db
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_EXPIRE=7d
 FRONTEND_URL=http://localhost:3000
+
+# Cloudinary Configuration (for profile image uploads)
+CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
 ```
 
 3. Start the development server:
@@ -49,6 +54,10 @@ The server will run on `http://localhost:5001`
 - `POST /api/auth/forgot-password` - Request password reset (sends reset token)
 - `POST /api/auth/reset-password` - Reset password with token
 - `POST /api/auth/change-password` - Change password (authenticated users)
+- `GET /api/auth/profile` - Get user profile (authenticated)
+- `PUT /api/auth/profile` - Update user profile (name, email) (authenticated)
+- `POST /api/auth/profile/upload-image` - Upload profile image to Cloudinary (authenticated)
+- `DELETE /api/auth/profile/image` - Delete profile image (authenticated)
 
 ### Accounts
 - `GET /api/accounts` - Get all accounts

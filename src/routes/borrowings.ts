@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import mongoose from 'mongoose';
 import Borrowing from '../models/Borrowing';
 import BorrowingTransaction from '../models/BorrowingTransaction';
 import Account from '../models/Account';
@@ -183,8 +184,18 @@ router.post(
       .isFloat({ min: 0.01 })
       .withMessage('Amount must be greater than 0'),
     body('accountId')
-      .isMongoId()
-      .withMessage('Account is required'),
+      .custom((value) => {
+        // null, undefined, or empty string is valid (cash payment)
+        if (value === null || value === undefined || value === '') {
+          return true;
+        }
+        // If provided, must be a valid MongoDB ObjectId string
+        if (typeof value === 'string' && value.trim() !== '' && mongoose.Types.ObjectId.isValid(value)) {
+          return true;
+        }
+        return false;
+      })
+      .withMessage('Invalid account ID. Must be a valid account ID or null/empty for cash payments'),
     body('date').optional().isISO8601().withMessage('Invalid date format'),
     body('note').optional().trim().isLength({ max: 500 }),
   ],
@@ -200,6 +211,23 @@ router.post(
       }
 
       const { amount, accountId, date, note } = req.body;
+      
+      // Normalize accountId - handle string "null" or empty strings
+      const normalizedAccountId = (accountId === null || accountId === undefined || accountId === '' || accountId === 'null') 
+        ? null 
+        : accountId;
+      
+      // Log for debugging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Payment request:', { 
+          amount, 
+          accountId: normalizedAccountId, 
+          originalAccountId: accountId,
+          date, 
+          note,
+          isCash: normalizedAccountId === null 
+        });
+      }
 
       // Find borrowing
       const borrowing = await Borrowing.findOne({
@@ -222,29 +250,8 @@ router.post(
         });
       }
 
-      // Verify account belongs to user
-      const account = await Account.findOne({
-        _id: accountId,
-        userId: req.user!.userId,
-      });
-
-      if (!account) {
-        return res.status(404).json({
-          success: false,
-          message: 'Account not found',
-        });
-      }
-
       // Determine transaction type based on borrowing type
       const transactionType = borrowing.type === 'borrow' ? 'payment' : 'return';
-
-      // For 'borrow' type (user paying back), check account balance
-      if (borrowing.type === 'borrow' && account.balance < amount) {
-        return res.status(400).json({
-          success: false,
-          message: 'Insufficient balance in the selected account',
-        });
-      }
 
       // Calculate new paid amount
       const newPaidAmount = borrowing.paidAmount + amount;
@@ -255,16 +262,44 @@ router.post(
         });
       }
 
-      // Update account balance
-      if (borrowing.type === 'borrow') {
-        // Deduct from account (user is paying back)
-        account.balance -= amount;
-      } else {
-        // Add to account (user is receiving return)
-        account.balance += amount;
-      }
+      let account = null;
+      // Check if this is a cash payment (using already normalized accountId)
+      const isCashPayment = normalizedAccountId === null;
 
-      await account.save();
+      // Handle account-based payment
+      if (!isCashPayment) {
+        // Verify account belongs to user
+        account = await Account.findOne({
+          _id: normalizedAccountId,
+          userId: req.user!.userId,
+        });
+
+        if (!account) {
+          return res.status(404).json({
+            success: false,
+            message: 'Account not found',
+          });
+        }
+
+        // For 'borrow' type (user paying back), check account balance
+        if (borrowing.type === 'borrow' && account.balance < amount) {
+          return res.status(400).json({
+            success: false,
+            message: 'Insufficient balance in the selected account',
+          });
+        }
+
+        // Update account balance
+        if (borrowing.type === 'borrow') {
+          // Deduct from account (user is paying back)
+          account.balance -= amount;
+        } else {
+          // Add to account (user is receiving return)
+          account.balance += amount;
+        }
+
+        await account.save();
+      }
 
       // Update borrowing
       borrowing.paidAmount = newPaidAmount;
@@ -276,19 +311,23 @@ router.post(
 
       await borrowing.save();
 
-      // Create transaction record
+      // Create transaction record (accountId can be null for cash payments)
       const transaction = new BorrowingTransaction({
         borrowingId: borrowing._id,
         userId: req.user!.userId,
         amount,
-        accountId,
+        accountId: isCashPayment ? null : normalizedAccountId,
         date: date ? new Date(date) : new Date(),
-        note,
+        note: note || (isCashPayment ? 'Cash payment' : undefined),
         type: transactionType,
       });
 
       await transaction.save();
-      await transaction.populate('accountId', 'name type');
+      
+      // Only populate accountId if it exists
+      if (!isCashPayment) {
+        await transaction.populate('accountId', 'name type');
+      }
 
       await borrowing.populate('initialAccountId', 'name type');
 

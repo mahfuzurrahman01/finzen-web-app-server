@@ -5,6 +5,8 @@ import User from '../models/User';
 import { generateToken } from '../config/jwt';
 import { seedDefaultCategories } from '../utils/seedCategories';
 import { authenticate } from '../middleware/auth';
+import { upload } from '../middleware/upload';
+import { uploadToCloudinary, deleteFromCloudinary, getPublicIdFromUrl } from '../config/cloudinary';
 
 const router = express.Router();
 
@@ -432,6 +434,293 @@ router.post(
     }
   }
 );
+
+// @route   GET /api/auth/profile
+// @desc    Get user profile
+// @access  Private
+router.get('/profile', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          profileImage: user.profileImage,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching profile',
+      ...(process.env.NODE_ENV === 'development' && { error: error.message }),
+    });
+  }
+});
+
+// @route   PUT /api/auth/profile
+// @desc    Update user profile (name, email)
+// @access  Private
+router.put(
+  '/profile',
+  authenticate,
+  [
+    body('name').optional().trim().isLength({ max: 100 }).withMessage('Name must be less than 100 characters'),
+    body('email')
+      .optional()
+      .isEmail()
+      .withMessage('Please provide a valid email')
+      .normalizeEmail(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array(),
+        });
+      }
+
+      const userId = req.user?.userId;
+      const { name, email } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+        });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      // Update name if provided
+      if (name !== undefined) {
+        user.name = name || undefined;
+      }
+
+      // Update email if provided and different
+      if (email !== undefined && email !== user.email) {
+        // Check if email is already taken
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email is already in use',
+          });
+        }
+        user.email = email;
+      }
+
+      await user.save();
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            profileImage: user.profileImage,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('Update profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error while updating profile',
+        ...(process.env.NODE_ENV === 'development' && { error: error.message }),
+      });
+    }
+  }
+);
+
+// @route   POST /api/auth/profile/upload-image
+// @desc    Upload profile image to Cloudinary
+// @access  Private
+router.post(
+  '/profile/upload-image',
+  authenticate,
+  upload.single('image'),
+  async (req: Request & { file?: Express.Multer.File }, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No image file provided',
+        });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      // Delete old profile image from Cloudinary if exists
+      if (user.profileImage) {
+        const oldPublicId = getPublicIdFromUrl(user.profileImage);
+        if (oldPublicId) {
+          await deleteFromCloudinary(oldPublicId);
+        }
+      }
+
+      // Upload new image to Cloudinary
+      try {
+        const { url, public_id } = await uploadToCloudinary(req.file, 'zenfinance/profiles');
+
+        // Update user profile image
+        user.profileImage = url;
+        await user.save();
+
+        res.json({
+          success: true,
+          message: 'Profile image uploaded successfully',
+          data: {
+            user: {
+              id: user._id,
+              email: user.email,
+              name: user.name,
+              profileImage: user.profileImage,
+              createdAt: user.createdAt,
+              updatedAt: user.updatedAt,
+            },
+            imageUrl: url,
+          },
+        });
+      } catch (uploadError: any) {
+        console.error('Cloudinary upload error:', uploadError);
+        // Check if it's a configuration error
+        if (uploadError.message?.includes('Cloudinary configuration missing') || 
+            uploadError.message?.includes('Must supply api_key')) {
+          return res.status(500).json({
+            success: false,
+            message: 'Image upload service not configured. Please check Cloudinary credentials.',
+            ...(process.env.NODE_ENV === 'development' && { 
+              error: uploadError.message,
+              hint: 'Make sure CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET are set in .env file'
+            }),
+          });
+        }
+        throw uploadError; // Re-throw to be caught by outer catch
+      }
+    } catch (error: any) {
+      console.error('Upload profile image error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Server error while uploading profile image',
+        ...(process.env.NODE_ENV === 'development' && { error: error.message }),
+      });
+    }
+  }
+);
+
+// @route   DELETE /api/auth/profile/image
+// @desc    Delete profile image
+// @access  Private
+router.delete('/profile/image', authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    if (!user.profileImage) {
+      return res.status(400).json({
+        success: false,
+        message: 'No profile image to delete',
+      });
+    }
+
+    // Delete image from Cloudinary
+    const publicId = getPublicIdFromUrl(user.profileImage);
+    if (publicId) {
+      await deleteFromCloudinary(publicId);
+    }
+
+    // Remove image URL from user profile
+    user.profileImage = undefined;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile image deleted successfully',
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          profileImage: user.profileImage,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Delete profile image error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting profile image',
+      ...(process.env.NODE_ENV === 'development' && { error: error.message }),
+    });
+  }
+});
 
 export default router;
 

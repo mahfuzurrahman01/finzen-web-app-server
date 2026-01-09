@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IAccount extends Document {
   userId: mongoose.Types.ObjectId;
   name: string;
-  type: 'bank' | 'wallet' | 'investment' | 'cash';
+  type: 'bank' | 'wallet' | 'investment' | 'cash' | 'saving';
   balance: number;
   currency: string;
   icon?: string; // Icon name from lucide-react
@@ -27,7 +27,7 @@ const AccountSchema = new Schema<IAccount>(
     },
     type: {
       type: String,
-      enum: ['bank', 'wallet', 'investment', 'cash'],
+      enum: ['bank', 'wallet', 'investment', 'cash', 'saving'],
       required: [true, 'Account type is required'],
     },
     balance: {

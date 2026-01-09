@@ -38,7 +38,7 @@ router.post(
   [
     body('name').trim().notEmpty().withMessage('Account name is required'),
     body('type')
-      .isIn(['bank', 'wallet', 'investment', 'cash'])
+      .isIn(['bank', 'wallet', 'investment', 'cash', 'saving'])
       .withMessage('Invalid account type'),
     body('balance')
       .isFloat({ min: 0 })
@@ -94,7 +94,7 @@ router.put(
   '/:id',
   [
     body('name').optional().trim().notEmpty(),
-    body('type').optional().isIn(['bank', 'wallet', 'investment', 'cash']),
+    body('type').optional().isIn(['bank', 'wallet', 'investment', 'cash', 'saving']).withMessage('Invalid account type'),
     body('balance').optional().isFloat({ min: 0 }),
     body('icon').optional().trim(),
     body('color').optional().matches(/^#[0-9A-Fa-f]{6}$/).withMessage('Color must be a valid hex code'),

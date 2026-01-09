@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   name?: string;
+  profileImage?: string;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
   passwordChangedAt?: Date;
@@ -33,6 +34,10 @@ const UserSchema = new Schema<IUser>(
       select: false, // Don't return password by default
     },
     name: {
+      type: String,
+      trim: true,
+    },
+    profileImage: {
       type: String,
       trim: true,
     },
